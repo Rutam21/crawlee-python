@@ -10,7 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse
 from crawlee._utils.crypto import compute_short_hash
 
 if TYPE_CHECKING:
-    from crawlee._types import HttpHeaders, HttpMethod, HttpPayload
+    from crawlee._types import HttpHeaders, HttpMethod, HttpPayload, HttpQueryParams
 
 logger = getLogger(__name__)
 
@@ -88,6 +88,7 @@ def compute_unique_key(
     url: str,
     method: HttpMethod = 'GET',
     headers: HttpHeaders | None = None,
+    query_params: HttpQueryParams | None = None,
     payload: HttpPayload | None = None,
     *,
     keep_url_fragment: bool = False,
@@ -101,10 +102,11 @@ def compute_unique_key(
     and included in the key.
 
     Args:
-        url: The request URL.
-        method: The HTTP method.
-        headers: The HTTP headers.
-        payload: The data to be sent as the request body.
+        url: The URL of the request.
+        method: The HTTP method of the request.
+        headers: The HTTP headers of the request.
+        query_params: The query parameters of the URL.
+        payload: The data to be sent as the request body. Typically used with 'POST' or 'PUT' requests.
         keep_url_fragment: A flag indicating whether to keep the URL fragment.
         use_extended_unique_key: A flag indicating whether to include a hashed payload in the key.
 
@@ -123,11 +125,12 @@ def compute_unique_key(
 
     # Compute and return the extended unique key if required.
     if use_extended_unique_key:
-        payload_hash = _get_payload_hash(payload)
         headers_hash = _get_headers_hash(headers)
+        query_params_hash = _get_query_params_hash(query_params)
+        payload_hash = _get_payload_hash(payload)
 
         # Return the extended unique key. Use pipe as a separator of the different parts of the unique key.
-        return f'{normalized_method}|{headers_hash}|{payload_hash}|{normalized_url}'
+        return f'{normalized_method}|{headers_hash}|{query_params_hash}|{payload_hash}|{normalized_url}'
 
     # Log information if there is a non-GET request with a payload.
     if normalized_method != 'GET' and payload:
@@ -141,17 +144,6 @@ def compute_unique_key(
     return normalized_url
 
 
-def _get_payload_hash(payload: HttpPayload | None) -> str:
-    if payload is None:
-        payload_in_bytes = b''
-    elif isinstance(payload, str):
-        payload_in_bytes = payload.encode('utf-8')
-    else:
-        payload_in_bytes = payload
-
-    return compute_short_hash(payload_in_bytes)
-
-
 def _get_headers_hash(headers: HttpHeaders | None) -> str:
     # HTTP headers which will be included in the hash computation.
     whitelisted_headers = {'accept', 'accept-language', 'authorization', 'content-type'}
@@ -163,3 +155,19 @@ def _get_headers_hash(headers: HttpHeaders | None) -> str:
         normalized_headers = '|'.join(f'{k}:{v}' for k, v in filtered_headers.items()).encode('utf-8')
 
     return compute_short_hash(normalized_headers)
+
+
+def _get_query_params_hash(query_params: HttpQueryParams | None) -> str:
+    if query_params is None:
+        normalized_query_params = b''
+    else:
+        # Sort the query parameters alphabetically to ensure consistent hashing.
+        sorted_query_params = sorted(query_params.items())
+        normalized_query_params = '|'.join(f'{k}={v}' for k, v in sorted_query_params).encode('utf-8')
+
+    return compute_short_hash(normalized_query_params)
+
+
+def _get_payload_hash(payload: HttpPayload | None) -> str:
+    payload_in_bytes = b'' if payload is None else payload
+    return compute_short_hash(payload_in_bytes)
