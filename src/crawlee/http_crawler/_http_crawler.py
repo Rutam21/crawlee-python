@@ -15,7 +15,37 @@ if TYPE_CHECKING:
 
 
 class HttpCrawler(BasicCrawler[HttpCrawlingContext]):
-    """A crawler that fetches the request URL using `httpx`."""
+    """A web crawler for performing HTTP requests.
+
+    The `HttpCrawler` builds on top of the `BasicCrawler`, which means it inherits all of its features. On top
+    of that it implements the HTTP communication using the HTTP clients. The class allows integration with
+    any HTTP client that implements the `BaseHttpClient` interface. The HTTP client is provided to the crawler
+    as an input parameter to the constructor.
+
+    ### Usage
+
+    ```python
+    from crawlee.http_crawler import HttpCrawler, HttpCrawlingContext
+
+    crawler = HttpCrawler()
+
+    # Define the default request handler, which will be called for every request.
+    @crawler.router.default_handler
+    async def request_handler(context: HttpCrawlingContext) -> None:
+        context.log.info(f'Processing {context.request.url} ...')
+
+        # Extract data from the page.
+        data = {
+            'url': context.request.url,
+            'response': context.http_response.read().decode()[:100],
+        }
+
+        # Push the extracted data to the default dataset.
+        await context.push_data(data)
+
+    await crawler.run(['https://crawlee.dev/'])
+    ```
+    """
 
     def __init__(
         self,
@@ -27,11 +57,11 @@ class HttpCrawler(BasicCrawler[HttpCrawlingContext]):
         """A default constructor.
 
         Args:
-            additional_http_error_status_codes: HTTP status codes that should be considered errors (and trigger
-                a retry).
-            ignore_http_error_status_codes: HTTP status codes that are normally considered errors but we want to treat
-                them as successful.
-            kwargs: Arguments to be forwarded to the underlying `BasicCrawler`.
+            additional_http_error_status_codes: Additional HTTP status codes to treat as errors, triggering
+                automatic retries when encountered.
+            ignore_http_error_status_codes: HTTP status codes typically considered errors but to be treated
+                as successful responses.
+            kwargs: Additional keyword arguments to pass to the underlying `BasicCrawler`.
         """
         kwargs['_context_pipeline'] = (
             ContextPipeline().compose(self._make_http_request).compose(self._handle_blocked_request)
@@ -50,6 +80,14 @@ class HttpCrawler(BasicCrawler[HttpCrawlingContext]):
         super().__init__(**kwargs)
 
     async def _make_http_request(self, context: BasicCrawlingContext) -> AsyncGenerator[HttpCrawlingContext, None]:
+        """Executes an HTTP request using a configured HTTP client.
+
+        Args:
+            context: The crawling context from the `BasicCrawler`.
+
+        Yields:
+            The enriched crawling context with the HTTP response.
+        """
         result = await self._http_client.crawl(
             request=context.request,
             session=context.session,
@@ -70,6 +108,17 @@ class HttpCrawler(BasicCrawler[HttpCrawlingContext]):
         )
 
     async def _handle_blocked_request(self, context: HttpCrawlingContext) -> AsyncGenerator[HttpCrawlingContext, None]:
+        """Handles blocked requests by checking the HTTP status code.
+
+        Args:
+            context: The current crawling context.
+
+        Raises:
+            SessionError: If the session is blocked based on the HTTP status code.
+
+        Yields:
+            The same context if no errors are detected.
+        """
         if self._retry_on_blocked:
             status_code = context.http_response.status_code
 

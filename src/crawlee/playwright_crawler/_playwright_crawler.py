@@ -58,7 +58,7 @@ class PlaywrightCrawler(BasicCrawler[PlaywrightCrawlingContext]):
                 This option should not be used if `browser_pool` is provided.
             headless: Whether to run the browser in headless mode.
                 This option should not be used if `browser_pool` is provided.
-            kwargs: Additional arguments to be forwarded to the underlying `BasicCrawler`.
+            kwargs: Additional keyword arguments to pass to the underlying `BasicCrawler`.
         """
         if browser_pool:
             # Raise an exception if browser_pool is provided together with headless or browser_type arguments.
@@ -174,12 +174,12 @@ class PlaywrightCrawler(BasicCrawler[PlaywrightCrawlingContext]):
 
     async def _handle_blocked_request(
         self,
-        crawling_context: PlaywrightCrawlingContext,
+        context: PlaywrightCrawlingContext,
     ) -> AsyncGenerator[PlaywrightCrawlingContext, None]:
         """Enhance the crawling context with handling of blocked requests.
 
         Args:
-            crawling_context: The crawling context to be checked for blocking.
+            context: The crawling context to be checked for blocking.
 
         Raises:
             SessionError: If the session is blocked based on the HTTP status code or the response content.
@@ -188,14 +188,14 @@ class PlaywrightCrawler(BasicCrawler[PlaywrightCrawlingContext]):
             The original crawling context if the session is not blocked.
         """
         if self._retry_on_blocked:
-            status_code = crawling_context.response.status
+            status_code = context.response.status
 
             # Check if the session is blocked based on the HTTP status code.
-            if crawling_context.session and crawling_context.session.is_blocked_status_code(status_code=status_code):
+            if context.session and context.session.is_blocked_status_code(status_code=status_code):
                 raise SessionError(f'Assuming the session is blocked based on HTTP status code {status_code}.')
 
             matched_selectors = [
-                selector for selector in RETRY_CSS_SELECTORS if (await crawling_context.page.query_selector(selector))
+                selector for selector in RETRY_CSS_SELECTORS if (await context.page.query_selector(selector))
             ]
 
             # Check if the session is blocked based on the response content
@@ -205,4 +205,4 @@ class PlaywrightCrawler(BasicCrawler[PlaywrightCrawlingContext]):
                     f"HTTP response matched the following selectors: {'; '.join(matched_selectors)}"
                 )
 
-        yield crawling_context
+        yield context
